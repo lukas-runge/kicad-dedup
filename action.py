@@ -11,10 +11,10 @@ import wx
 from .dialog import DedupDialog
 
 
-class HoleDedupPlugin(pcbnew.ActionPlugin):
+class DedupPlugin(pcbnew.ActionPlugin):
 
     def defaults(self):
-        self.name = "Bohrungen und Leiterbahnen deduplizieren"
+        self.name = "Deduplizieren"
         self.category = "Modify PCB"
         self.description = (
             "Findet deckungsgleiche Bohrungen (gestapelte Vias, Vias in "

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Registriert das Plugin »Bohrungen deduplizieren« im PCB-Editor."""
+"""Registriert das Plugin »Deduplizieren« im PCB-Editor."""
 
-from .action import HoleDedupPlugin
+from .action import DedupPlugin
 
-HoleDedupPlugin().register()
+DedupPlugin().register()

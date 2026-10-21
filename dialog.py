@@ -24,7 +24,7 @@ class DedupDialog(wx.Dialog):
 
     def __init__(self, parent, board):
         wx.Dialog.__init__(
-            self, parent, title="Bohrungen und Leiterbahnen deduplizieren",
+            self, parent, title="Deduplizieren – Bohrungen und Leiterbahnen",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
             size=wx.Size(1180, 620))
 

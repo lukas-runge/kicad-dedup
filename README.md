@@ -1,4 +1,6 @@
-# Bohrungen und Leiterbahnen deduplizieren
+# kicad-dedup
+
+Deduplizieren: Bohrungen und Leiterbahnen
 
 KiCad-ActionPlugin für den PCB-Editor. Findet Bohrungen, die auf derselben
 Stelle liegen, sowie Leiterbahnsegmente, die doppelt oder übereinander
@@ -9,11 +11,11 @@ liegen, und entfernt die überzähligen.
 Das Plugin liegt in
 
 ```
-~/Documents/KiCad/10.0/scripting/plugins/hole_dedup/
+~/Documents/KiCad/10.0/scripting/plugins/dedup/
 ```
 
 Im PCB-Editor `Werkzeuge → Externe Plugins → Plugins aktualisieren` aufrufen.
-Danach erscheint der Knopf **Bohrungen und Leiterbahnen deduplizieren** in der Werkzeugleiste
+Danach erscheint der Knopf **Deduplizieren** in der Werkzeugleiste
 und unter `Werkzeuge → Externe Plugins`.
 
 ## Was gefunden wird
