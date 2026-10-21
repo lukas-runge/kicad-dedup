@@ -14,12 +14,12 @@ from .dialog import DedupDialog
 class HoleDedupPlugin(pcbnew.ActionPlugin):
 
     def defaults(self):
-        self.name = "Bohrungen deduplizieren"
+        self.name = "Bohrungen und Leiterbahnen deduplizieren"
         self.category = "Modify PCB"
         self.description = (
             "Findet deckungsgleiche Bohrungen (gestapelte Vias, Vias in "
-            "Pad-Bohrungen, doppelte Bohrungs-Footprints) und entfernt die "
-            "überzähligen."
+            "Pad-Bohrungen, doppelte Bohrungs-Footprints) sowie doppelte und "
+            "überlappende Leiterbahnsegmente und entfernt die überzähligen."
         )
         self.show_toolbar_button = True
         self.icon_file_name = os.path.join(os.path.dirname(__file__), "icon.png")
@@ -33,8 +33,10 @@ class HoleDedupPlugin(pcbnew.ActionPlugin):
         try:
             if not dialog.findings:
                 wx.MessageBox(
-                    "Keine deckungsgleichen Bohrungen gefunden.\n\n"
-                    "%d Bohrungen geprüft." % dialog.hole_count,
+                    "Keine deckungsgleichen Bohrungen und keine doppelten "
+                    "Leiterbahnen gefunden.\n\n"
+                    "%d Bohrungen und %d Leiterbahnsegmente geprüft."
+                    % (dialog.hole_count, dialog.segment_count),
                     self.name, wx.OK | wx.ICON_INFORMATION, parent)
                 return
 
@@ -48,9 +50,14 @@ class HoleDedupPlugin(pcbnew.ActionPlugin):
                 parts.append("%d Vias" % dialog.removed_vias)
             if dialog.removed_footprints:
                 parts.append("%d Footprints" % dialog.removed_footprints)
-            summary = " und ".join(parts) if parts else "nichts"
+            if dialog.removed_tracks:
+                parts.append("%d Leiterbahnsegmente" % dialog.removed_tracks)
+            summary = ", ".join(parts) if parts else "nichts"
 
-            message = "%s entfernt." % summary.capitalize()
+            message = (summary[0].upper() + summary[1:] + " entfernt.") if parts else "Nichts entfernt."
+            if dialog.merged_tracks:
+                message += ("\n%d Leiterbahnen auf die Gesamtlänge ihrer "
+                            "Segmente verlängert." % dialog.merged_tracks)
             if getattr(dialog, "skipped", None):
                 message += ("\n\n%d Zeilen übersprungen, weil das Objekt "
                             "anderswo als »behalten« markiert war."

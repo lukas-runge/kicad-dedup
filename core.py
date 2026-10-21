@@ -14,6 +14,8 @@ from collections import defaultdict
 
 import pcbnew
 
+from . import tracks
+
 VIA = "via"
 PAD = "pad"
 
@@ -30,11 +32,13 @@ CATEGORY_LABELS = {
     CAT_NET_CONFLICT: "Netz-Konflikt",
     CAT_OVERLAP: "Bohrungen überlappen",
 }
+CATEGORY_LABELS.update(tracks.CATEGORY_LABELS)
 
 CATEGORY_ORDER = [
     CAT_VIA_STACK,
     CAT_VIA_IN_PAD,
     CAT_PAD_STACK,
+] + tracks.CATEGORY_ORDER + [
     CAT_NET_CONFLICT,
     CAT_OVERLAP,
 ]
@@ -100,7 +104,8 @@ class Hole(object):
 class Finding(object):
     """Ein Befund: `target` koennte zugunsten von `keeper` entfallen."""
 
-    __slots__ = ("category", "target", "keeper", "removable", "safe", "detail")
+    __slots__ = ("category", "target", "keeper", "removable", "safe", "detail",
+                 "merge")
 
     def __init__(self, category, target, keeper, removable, safe, detail):
         self.category = category
@@ -109,6 +114,9 @@ class Finding(object):
         self.removable = removable
         self.safe = safe
         self.detail = detail
+        # Nur bei Leiterbahnen: neue Endpunkte ((x, y), (x, y)) fuer `keeper`,
+        # wenn sich ueberlappende Segmente zu einem verschmelzen.
+        self.merge = None
 
     @property
     def category_label(self):
@@ -440,7 +448,8 @@ def _analyse_mixed(holes, pairs, tolerance, scheduled):
 
 
 def analyse(board, position_tolerance):
-    """Board untersuchen und alle Befunde sortiert zurueckgeben."""
+    """Board untersuchen und alle Befunde sortiert zurueckgeben.
+    Liefert (Befunde, Anzahl Bohrungen, Anzahl Leiterbahnsegmente)."""
     holes = collect_holes(board)
 
     stacked_vias = []
@@ -456,13 +465,18 @@ def analyse(board, position_tolerance):
     findings = _analyse_via_stacks(holes, stacked_vias, scheduled)
     findings.extend(_analyse_mixed(holes, remaining, position_tolerance, scheduled))
 
+    segments = tracks.collect_segments(board)
+    track_findings, _merges = tracks.analyse_tracks(
+        segments, position_tolerance, Finding)
+    findings.extend(track_findings)
+
     findings.sort(key=lambda finding: (
         CATEGORY_ORDER.index(finding.category)
         if finding.category in CATEGORY_ORDER else len(CATEGORY_ORDER),
         finding.target.x,
         finding.target.y,
     ))
-    return findings, len(holes)
+    return findings, len(holes), len(segments)
 
 
 # --- Anwenden --------------------------------------------------------------
@@ -475,8 +489,8 @@ def _uuid_of(item):
 
 
 def apply_findings(board, findings):
-    """Ausgewaehlte Befunde umsetzen. Gibt (Vias, Footprints, uebersprungen)
-    zurueck."""
+    """Ausgewaehlte Befunde umsetzen. Gibt (Vias, Footprints, Leiterbahnen,
+    verschmolzene Leiterbahnen, uebersprungen) zurueck."""
     protected = set()
     for finding in findings:
         keeper = finding.keeper
@@ -489,8 +503,15 @@ def apply_findings(board, findings):
     footprints = {}
     skipped = []
 
+    track_findings = [f for f in findings if f.target.kind == tracks.TRACK]
+    removed_tracks, merged_tracks, track_skipped = tracks.apply_track_findings(
+        board, track_findings, protected, _uuid_of)
+    skipped.extend(track_skipped)
+
     for finding in findings:
         target = finding.target
+        if target.kind == tracks.TRACK:
+            continue
         if target.kind == VIA:
             key = _uuid_of(target.item)
             if key in protected:
@@ -514,4 +535,4 @@ def apply_findings(board, findings):
         board.Remove(footprint)
 
     board.BuildConnectivity()
-    return len(vias), len(footprints), skipped
+    return len(vias), len(footprints), removed_tracks, merged_tracks, skipped

@@ -24,16 +24,21 @@ class DedupDialog(wx.Dialog):
 
     def __init__(self, parent, board):
         wx.Dialog.__init__(
-            self, parent, title="Bohrungen deduplizieren",
+            self, parent, title="Bohrungen und Leiterbahnen deduplizieren",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
             size=wx.Size(1180, 620))
 
         self.board = board
         self.findings = []
         self.hole_count = 0
+        self.segment_count = 0
         self.removed_vias = 0
         self.removed_footprints = 0
+        self.removed_tracks = 0
+        self.merged_tracks = 0
         self.skipped = []
+        # Objekte, die gerade im Editor hervorgehoben sind (Flags gesetzt).
+        self.highlighted = []
         # CheckItem() loest EVT_LIST_ITEM_CHECKED sofort aus. Waehrend eines
         # Massen-Updates muss der Handler daher stillgelegt werden.
         self.updating = False
@@ -52,8 +57,9 @@ class DedupDialog(wx.Dialog):
         self.tolerance = wx.TextCtrl(self, value="0.05", size=wx.Size(70, -1),
                                      style=wx.TE_PROCESS_ENTER)
         self.tolerance.SetToolTip(
-            "Bohrungen, deren Mittelpunkte näher beieinander liegen, "
-            "gelten als deckungsgleich.")
+            "Bohrungen, deren Mittelpunkte näher beieinander liegen, gelten "
+            "als deckungsgleich. Bei Leiterbahnen: Endpunkte näher als das "
+            "gelten als gleich.")
         options.Add(self.tolerance, 0, wx.ALIGN_CENTER_VERTICAL)
         options.Add(wx.StaticText(self, label="mm"),
                     0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
@@ -126,7 +132,7 @@ class DedupDialog(wx.Dialog):
     def scan(self):
         busy = wx.BusyCursor()
         try:
-            self.findings, self.hole_count = core.analyse(
+            self.findings, self.hole_count, self.segment_count = core.analyse(
                 self.board, self.tolerance_nm())
         finally:
             del busy
@@ -164,9 +170,9 @@ class DedupDialog(wx.Dialog):
         removable = sum(1 for f in self.findings if f.removable)
         reports = len(self.findings) - removable
         self.summary.SetLabel(
-            "%d Bohrungen geprüft · %d überzählige Bohrungen entfernbar · "
-            "%d Befunde nur zur Kontrolle"
-            % (self.hole_count, removable, reports))
+            "%d Bohrungen und %d Leiterbahnsegmente geprüft · "
+            "%d überzählige Objekte entfernbar · %d Befunde nur zur Kontrolle"
+            % (self.hole_count, self.segment_count, removable, reports))
         self.summary.GetContainingSizer().Layout()
         self.update_status()
 
@@ -212,11 +218,50 @@ class DedupDialog(wx.Dialog):
     def on_select(self, event):
         row = event.GetIndex()
         if 0 <= row < len(self.findings):
+            self.highlight(self.findings[row])
+        event.Skip()
+
+    # --- Hervorhebung im Editor -------------------------------------------
+
+    def highlight(self, finding):
+        """Zu entfernendes Objekt selektieren (Auswahlfarbe), das bleibende
+        aufhellen, Ansicht darauf zentrieren. Sonst sieht man bei
+        deckungsgleichen Objekten nicht, welches gemeint ist."""
+        self.clear_highlight()
+        target, keeper = finding.target.item, finding.keeper.item
+        try:
+            target.SetSelected()
+            self.highlighted.append(target)
+            if keeper is not target:
+                keeper.SetBrightened()
+                self.highlighted.append(keeper)
+        except Exception:
+            pass
+        try:
+            pcbnew.FocusOnItem(target)
+        except Exception:
+            pass
+        self._refresh()
+
+    def clear_highlight(self):
+        for item in self.highlighted:
             try:
-                pcbnew.FocusOnItem(self.findings[row].target.item)
+                item.ClearSelected()
+                item.ClearBrightened()
             except Exception:
                 pass
-        event.Skip()
+        self.highlighted = []
+
+    def _refresh(self):
+        try:
+            pcbnew.Refresh()
+        except Exception:
+            pass
+
+    def Destroy(self):
+        self.clear_highlight()
+        self._refresh()
+        return wx.Dialog.Destroy(self)
 
     def on_swap(self, _event):
         row = self.list.GetFirstSelected()
@@ -243,7 +288,14 @@ class DedupDialog(wx.Dialog):
             if finding.target.kind == core.PAD
             and finding.target.footprint is not None))
 
+        merged = len(set(
+            id(finding.keeper.item) for finding in selection
+            if getattr(finding, "merge", None) is not None))
+
         message = "%d Objekte werden entfernt." % len(selection)
+        if merged:
+            message += ("\n\n%d Leiterbahnen werden dabei auf die Gesamtlänge "
+                        "ihrer überlappenden Segmente verlängert." % merged)
         if footprints:
             message += ("\n\nDarunter %d komplette Footprints: %s"
                         "\nDiese kommen bei »PCB aus Schaltplan aktualisieren« "
@@ -251,14 +303,17 @@ class DedupDialog(wx.Dialog):
                         % (len(footprints), ", ".join(footprints)))
         message += "\n\nRückgängig mit Strg+Z im PCB-Editor."
 
-        confirm = wx.MessageBox(message, "Bohrungen entfernen",
+        confirm = wx.MessageBox(message, "Objekte entfernen",
                                 wx.OK | wx.CANCEL | wx.ICON_QUESTION, self)
         if confirm != wx.OK:
             return
 
-        vias, removed_footprints, skipped = core.apply_findings(
-            self.board, selection)
+        self.clear_highlight()
+        vias, removed_footprints, removed_tracks, merged_tracks, skipped = \
+            core.apply_findings(self.board, selection)
         self.removed_vias = vias
         self.removed_footprints = removed_footprints
+        self.removed_tracks = removed_tracks
+        self.merged_tracks = merged_tracks
         self.skipped = skipped
         self.EndModal(wx.ID_OK)
